@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-read-any-pdf.py
+mcp-pdf-reader.py
 Minimal compatible MCP PDF reader using MuPDF's mutool.exe.
 
 Flow:
@@ -24,7 +24,6 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-import tempfile
 import shutil
 import time
 from pathlib import Path

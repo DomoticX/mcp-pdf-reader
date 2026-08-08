@@ -1,3 +1,4 @@
 bin/mutool.exe
 temp/*
 !temp/README.md
+__pycache__/
