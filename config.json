@@ -1,8 +1,6 @@
 {
-  "mutool_path": "K:\\mcp-tools\\mcp-pdf-reader\\bin\\mutool.exe",
   "render_dpi": 150,
   "min_text_chars": 30,
-  "render_output_dir": "K:\\mcp-tools\\mcp-pdf-reader\\temp",
   "command_timeout_seconds": 300,
   "keep_rendered_pages": true,
   "cleanup_stale_after_seconds": 3600

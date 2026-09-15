@@ -1,0 +1,6 @@
+.git
+temp/
+bin/
+__pycache__/
+*.pyc
+docker-compose.yml

@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
 mcp-pdf-reader.py
-Minimal compatible MCP PDF reader using MuPDF's mutool.exe.
+Minimal compatible MCP PDF reader using MuPDF's mutool CLI.
+
+Cross-platform: works on Windows (bin/mutool.exe) and Linux (bin/mutool,
+or a `mutool` already on PATH, e.g. installed via `apt install mupdf-tools`).
 
 Flow:
 1. Try native text extraction with MuPDF.
@@ -12,16 +15,22 @@ Requires:
     pip install mcp
 
 Directory example:
-    K:\mcp-tools\mcp-pdf-reader\
+    mcp-pdf-reader/
         mcp-pdf-reader.py
         config.json
-        bin\
-            mutool.exe
+        bin/
+            mutool.exe   (Windows)  or  mutool  (Linux)
+
+Transport:
+    python mcp-pdf-reader.py --transport stdio                    (default)
+    python mcp-pdf-reader.py --transport streamable-http --host 0.0.0.0 --port 8000
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import platform
 import re
 import subprocess
 import shutil
@@ -39,8 +48,11 @@ except ImportError:
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = BASE_DIR / "config.json"
 
+IS_WINDOWS = platform.system() == "Windows"
+MUTOOL_BIN_NAME = "mutool.exe" if IS_WINDOWS else "mutool"
+
 DEFAULT_CONFIG = {
-    "mutool_path": str(BASE_DIR / "bin" / "mutool.exe"),
+    "mutool_path": str(BASE_DIR / "bin" / MUTOOL_BIN_NAME),
     "render_dpi": 300,
     "min_text_chars": 30,
     "render_output_dir": str(BASE_DIR / "temp"),
@@ -64,16 +76,36 @@ def load_config() -> dict[str, Any]:
     return cfg
 
 
+def resolve_mutool_path(cfg: dict[str, Any]) -> Path:
+    """
+    Resolve the mutool binary to use.
+
+    Prefers the configured/default path (e.g. bin/mutool.exe or bin/mutool).
+    Falls back to a `mutool` found on PATH, which covers Linux installs done
+    via a package manager (e.g. `apt install mupdf-tools`) rather than the
+    bin/ folder convention used on Windows.
+    """
+    configured = Path(cfg["mutool_path"]).expanduser()
+    if configured.is_file():
+        return configured
+
+    on_path = shutil.which(MUTOOL_BIN_NAME) or shutil.which("mutool")
+    if on_path:
+        return Path(on_path)
+
+    return configured
+
+
 CONFIG = load_config()
-MUTOOL = Path(CONFIG["mutool_path"]).expanduser()
+MUTOOL = resolve_mutool_path(CONFIG)
 
 
 def run_mutool(args: list[str], timeout: int | None = None) -> subprocess.CompletedProcess[str]:
     """Run mutool without opening a console window on Windows."""
     if not MUTOOL.is_file():
         raise FileNotFoundError(
-            f"mutool.exe not found: {MUTOOL}. "
-            f"Set 'mutool_path' in {CONFIG_FILE}."
+            f"mutool binary not found: {MUTOOL}. "
+            f"Set 'mutool_path' in {CONFIG_FILE}, or make sure `{MUTOOL_BIN_NAME}` is on PATH."
         )
 
     timeout = timeout or int(CONFIG["command_timeout_seconds"])
@@ -142,7 +174,7 @@ def make_render_dir(pdf: Path) -> Path:
     root = Path(CONFIG["render_output_dir"]).expanduser()
     root.mkdir(parents=True, exist_ok=True)
 
-    # Separate directory per PDF, sanitized for Windows filenames.
+    # Separate directory per PDF, sanitized to be a safe filename on any OS.
     safe_stem = re.sub(r'[^A-Za-z0-9._ -]+', "_", pdf.stem).strip(" .")
     safe_stem = safe_stem or "pdf"
 
@@ -430,8 +462,36 @@ def pdf_info(path: str) -> dict[str, Any]:
     }
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="MCP PDF reader server")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "streamable-http"],
+        default="stdio",
+        help="Transport protocol to use (default: stdio)",
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host to bind for streamable-http transport (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port to bind for streamable-http transport (default: 8000)",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    # Remove leftovers from old sessions, but never fresh files Goose may still need.
+    args = parse_args()
+
+    # Remove leftovers from old sessions, but never fresh files the agent may still need.
     cleanup_stale_render_dirs()
-    # stdio is the normal transport when Goose starts this script as an extension.
-    mcp.run()
+
+    if args.transport == "streamable-http":
+        mcp.run(transport="streamable-http", host=args.host, port=args.port)
+    else:
+        # stdio is the normal transport when a client starts this script as a local extension.
+        mcp.run(transport="stdio")
